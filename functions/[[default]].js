@@ -1,14 +1,15 @@
 // ============================================
-// EdgeOne Pages 短链接服务 - 终极修复版
-// 适配 EdgeOne Pages Functions 运行时
+// EdgeOne Pages 短链接服务 - 使用全局变量绑定 KV
 // ============================================
 
-// 环境变量和 KV 从 context.env 获取（EdgeOne Pages 标准方式）
-// 注意：KV 绑定变量名必须在控制台设置为 SHORTLINK_KV
+// KV 直接作为全局变量使用（控制台绑定的 Variable Name）
+// 注意：控制台绑定时 Variable Name 必须填 shortlink_kv
 
-// ====== 兼容性工具函数 ======
+// 环境变量从 context.env 读取
+// ADMIN_USERNAME, ADMIN_PASSWORD_HASH, ADMIN_TOTP_SECRET, JWT_SECRET
 
-// SHA-256 哈希
+// ====== 工具函数 ======
+
 async function sha256(text) {
   const encoder = new TextEncoder();
   const data = encoder.encode(text);
@@ -17,10 +18,8 @@ async function sha256(text) {
   return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-// Base32 字符集
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
-// Base32 解码
 function base32Decode(base32) {
   let bits = '';
   const result = [];
@@ -39,7 +38,6 @@ function base32Decode(base32) {
   return new Uint8Array(result);
 }
 
-// 将数字写入 8 字节 buffer
 function writeUInt64BE(buffer, offset, value) {
   const high = Math.floor(value / 0x100000000);
   const low = value >>> 0;
@@ -48,7 +46,6 @@ function writeUInt64BE(buffer, offset, value) {
   view.setUint32(offset + 4, low, false);
 }
 
-// HOTP 计算
 async function hotp(key, counter, digits) {
   digits = digits || 6;
   
@@ -76,7 +73,6 @@ async function hotp(key, counter, digits) {
   return (code % mod).toString().padStart(digits, '0');
 }
 
-// TOTP 验证
 async function verifyTOTP(secret, code, window) {
   window = window || 1;
   try {
@@ -94,12 +90,10 @@ async function verifyTOTP(secret, code, window) {
   return false;
 }
 
-// Base64URL 编码
 function base64UrlEncode(str) {
   return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
-// Base64URL 解码
 function base64UrlDecode(str) {
   let padding = '';
   const padLen = 4 - (str.length % 4);
@@ -109,7 +103,6 @@ function base64UrlDecode(str) {
   return atob(str.replace(/-/g, '+').replace(/_/g, '/') + padding);
 }
 
-// JWT 签名
 async function signJWT(payload, secret) {
   const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = base64UrlEncode(JSON.stringify(payload));
@@ -135,7 +128,6 @@ async function signJWT(payload, secret) {
   return data + '.' + sig;
 }
 
-// JWT 验证
 async function verifyJWT(token, secret) {
   try {
     const parts = token.split('.');
@@ -174,7 +166,6 @@ async function verifyJWT(token, secret) {
   }
 }
 
-// 生成随机短码
 function generateShortCode(length) {
   length = length || 6;
   const chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -187,7 +178,6 @@ function generateShortCode(length) {
   return result;
 }
 
-// JSON 响应
 function jsonResponse(data, status, extraHeaders) {
   status = status || 200;
   extraHeaders = extraHeaders || {};
@@ -197,7 +187,6 @@ function jsonResponse(data, status, extraHeaders) {
   });
 }
 
-// HTML 响应
 function htmlResponse(html, status) {
   status = status || 200;
   return new Response(html, {
@@ -206,7 +195,6 @@ function htmlResponse(html, status) {
   });
 }
 
-// ====== 密码保护页面 ======
 function passwordPage(shortCode) {
   return '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>密码保护</title>' +
     '<style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;background:linear-gradient(135deg,#667eea,#764ba2)}' +
@@ -225,32 +213,21 @@ export async function onRequest(context) {
   const path = url.pathname;
   const method = request.method;
 
-  // 从 context.env 获取环境变量和 KV（EdgeOne Pages 标准方式）
+  // 环境变量从 context.env 读取
   const env = context.env || {};
-  
-  // KV 存储 - 变量名必须与控制台绑定的 Variable Name 一致
-  const KV = env.SHORTLINK_KV;
-  
-  // 环境变量
   const ADMIN_USERNAME = env.ADMIN_USERNAME || '';
   const ADMIN_PASSWORD_HASH = env.ADMIN_PASSWORD_HASH || '';
   const ADMIN_TOTP_SECRET = env.ADMIN_TOTP_SECRET || '';
   const JWT_SECRET = env.JWT_SECRET || '';
 
-  // 检查 KV 是否绑定
-  if (!KV) {
-    console.error('KV not bound. Please bind a KV namespace with Variable Name: SHORTLINK_KV');
-    return jsonResponse({ 
-      error: 'KV storage not configured', 
-      message: 'Please bind a KV namespace with Variable Name: SHORTLINK_KV in the console' 
-    }, 500);
-  }
+  // KV 直接作为全局变量使用（控制台绑定的 Variable Name = shortlink_kv）
+  // 注意：不需要从 env 读取，直接像全局变量一样使用
 
-  // ====== KV 操作函数（闭包内使用 KV）======
+  // ====== KV 操作函数 ======
   
   async function getLink(shortCode) {
     try {
-      const data = await KV.get('link:' + shortCode);
+      const data = await shortlink_kv.get('link:' + shortCode);
       return data ? JSON.parse(data) : null;
     } catch (e) {
       return null;
@@ -258,19 +235,19 @@ export async function onRequest(context) {
   }
 
   async function setLink(shortCode, data) {
-    await KV.put('link:' + shortCode, JSON.stringify(data));
+    await shortlink_kv.put('link:' + shortCode, JSON.stringify(data));
   }
 
   async function deleteLink(shortCode) {
-    await KV.delete('link:' + shortCode);
+    await shortlink_kv.delete('link:' + shortCode);
   }
 
   async function incrementClicks(shortCode) {
     try {
       const key = 'clicks:' + shortCode;
-      const current = await KV.get(key);
+      const current = await shortlink_kv.get(key);
       const count = current ? parseInt(current) + 1 : 1;
-      await KV.put(key, count.toString());
+      await shortlink_kv.put(key, count.toString());
       return count;
     } catch (e) {
       return 0;
@@ -280,7 +257,7 @@ export async function onRequest(context) {
   async function getAllLinks() {
     const links = [];
     try {
-      const indexData = await KV.get('link_index');
+      const indexData = await shortlink_kv.get('link_index');
       const index = indexData ? JSON.parse(indexData) : [];
       for (let i = 0; i < index.length; i++) {
         const link = await getLink(index[i]);
@@ -297,11 +274,11 @@ export async function onRequest(context) {
 
   async function addToIndex(shortCode) {
     try {
-      const indexData = await KV.get('link_index');
+      const indexData = await shortlink_kv.get('link_index');
       const index = indexData ? JSON.parse(indexData) : [];
       if (index.indexOf(shortCode) === -1) {
         index.push(shortCode);
-        await KV.put('link_index', JSON.stringify(index));
+        await shortlink_kv.put('link_index', JSON.stringify(index));
       }
     } catch (e) {
       console.error('addToIndex error:', e);
@@ -310,7 +287,7 @@ export async function onRequest(context) {
 
   async function removeFromIndex(shortCode) {
     try {
-      const indexData = await KV.get('link_index');
+      const indexData = await shortlink_kv.get('link_index');
       const index = indexData ? JSON.parse(indexData) : [];
       const filtered = [];
       for (let i = 0; i < index.length; i++) {
@@ -318,7 +295,7 @@ export async function onRequest(context) {
           filtered.push(index[i]);
         }
       }
-      await KV.put('link_index', JSON.stringify(filtered));
+      await shortlink_kv.put('link_index', JSON.stringify(filtered));
     } catch (e) {
       console.error('removeFromIndex error:', e);
     }
@@ -327,7 +304,6 @@ export async function onRequest(context) {
   // ====== API 路由 ======
 
   async function handleAPI(request, path, method) {
-    // 创建短链（公开接口）
     if (path === '/api/create' && method === 'POST') {
       try {
         const body = await request.json();
@@ -386,7 +362,6 @@ export async function onRequest(context) {
       }
     }
 
-    // 管理员登录
     if (path === '/api/login' && method === 'POST') {
       try {
         const body = await request.json();
@@ -422,7 +397,6 @@ export async function onRequest(context) {
       }
     }
 
-    // 验证 Token
     if (path === '/api/verify' && method === 'GET') {
       const auth = request.headers.get('Authorization');
       if (!auth || auth.indexOf('Bearer ') !== 0) {
@@ -433,7 +407,6 @@ export async function onRequest(context) {
       return jsonResponse({ valid: !!payload, user: payload });
     }
 
-    // 以下需要管理员权限
     const auth = request.headers.get('Authorization');
     if (!auth || auth.indexOf('Bearer ') !== 0) {
       return jsonResponse({ error: '未授权' }, 401);
@@ -444,29 +417,26 @@ export async function onRequest(context) {
       return jsonResponse({ error: '权限不足' }, 403);
     }
 
-    // 获取所有链接
     if (path === '/api/links' && method === 'GET') {
       const links = await getAllLinks();
       for (let i = 0; i < links.length; i++) {
-        const clicks = await KV.get('clicks:' + links[i].shortCode);
+        const clicks = await shortlink_kv.get('clicks:' + links[i].shortCode);
         links[i].clicks = clicks ? parseInt(clicks) : 0;
       }
       return jsonResponse({ success: true, links: links });
     }
 
-    // 获取单条链接
     if (path.indexOf('/api/links/') === 0 && method === 'GET') {
       const shortCode = path.split('/')[3];
       const link = await getLink(shortCode);
       if (!link) return jsonResponse({ error: '短链不存在' }, 404);
-      const clicks = await KV.get('clicks:' + shortCode);
+      const clicks = await shortlink_kv.get('clicks:' + shortCode);
       return jsonResponse({
         success: true,
         link: Object.assign({}, link, { shortCode: shortCode, clicks: clicks ? parseInt(clicks) : 0 })
       });
     }
 
-    // 更新链接
     if (path.indexOf('/api/links/') === 0 && method === 'PUT') {
       const shortCode = path.split('/')[3];
       const link = await getLink(shortCode);
@@ -488,22 +458,20 @@ export async function onRequest(context) {
       return jsonResponse({ success: true });
     }
 
-    // 删除链接
     if (path.indexOf('/api/links/') === 0 && method === 'DELETE') {
       const shortCode = path.split('/')[3];
       await deleteLink(shortCode);
       await removeFromIndex(shortCode);
-      await KV.delete('clicks:' + shortCode);
+      await shortlink_kv.delete('clicks:' + shortCode);
       return jsonResponse({ success: true });
     }
 
-    // 统计数据
     if (path === '/api/stats' && method === 'GET') {
       const links = await getAllLinks();
       let totalClicks = 0;
       const stats = [];
       for (let i = 0; i < links.length; i++) {
-        const clicks = await KV.get('clicks:' + links[i].shortCode);
+        const clicks = await shortlink_kv.get('clicks:' + links[i].shortCode);
         const count = clicks ? parseInt(clicks) : 0;
         totalClicks += count;
         stats.push({ shortCode: links[i].shortCode, url: links[i].url, clicks: count });
@@ -518,8 +486,6 @@ export async function onRequest(context) {
 
     return jsonResponse({ error: '接口不存在' }, 404);
   }
-
-  // ====== 请求处理 ======
 
   // OPTIONS 预检
   if (method === 'OPTIONS') {
@@ -539,7 +505,7 @@ export async function onRequest(context) {
       return await handleAPI(request, path, method);
     }
 
-    // 短链跳转（排除静态资源）
+    // 短链跳转
     if (path !== '/' &&
         path.indexOf('/admin') !== 0 &&
         path.indexOf('/login') !== 0 &&
@@ -551,11 +517,9 @@ export async function onRequest(context) {
       if (shortCode && shortCode.indexOf('/') === -1) {
         const link = await getLink(shortCode);
         if (link && link.active !== false) {
-          // 检查过期
           if (link.expireAt && Date.now() > link.expireAt) {
             return Response.redirect('/404.html', 302);
           }
-          // 密码保护
           if (link.password && !url.searchParams.get('pwd')) {
             return htmlResponse(passwordPage(shortCode));
           }
@@ -565,7 +529,6 @@ export async function onRequest(context) {
               '.box{background:#fff;padding:40px;border-radius:12px;text-align:center}h2{color:#dc3545}a{color:#007bff}</style></head>' +
               '<body><div class="box"><h2>❌ 密码错误</h2><p><a href="/' + shortCode + '">重新输入</a> | <a href="/">返回首页</a></p></div></body></html>');
           }
-          // 记录点击并跳转
           await incrementClicks(shortCode);
           return Response.redirect(link.url, 302);
         }
