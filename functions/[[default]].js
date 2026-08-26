@@ -1,16 +1,10 @@
 // ============================================
-// EdgeOne Pages 短链接服务 - 完全兼容版
+// EdgeOne Pages 短链接服务 - 终极修复版
 // 适配 EdgeOne Pages Functions 运行时
 // ============================================
 
-// KV 命名空间绑定（控制台绑定变量名必须匹配）
-const KV = shortlink_kv;
-
-// 环境变量读取
-const ADMIN_USERNAME = typeof process !== 'undefined' && process.env ? process.env.ADMIN_USERNAME : '';
-const ADMIN_PASSWORD_HASH = typeof process !== 'undefined' && process.env ? process.env.ADMIN_PASSWORD_HASH : '';
-const ADMIN_TOTP_SECRET = typeof process !== 'undefined' && process.env ? process.env.ADMIN_TOTP_SECRET : '';
-const JWT_SECRET = typeof process !== 'undefined' && process.env ? process.env.JWT_SECRET : '';
+// 环境变量和 KV 从 context.env 获取（EdgeOne Pages 标准方式）
+// 注意：KV 绑定变量名必须在控制台设置为 SHORTLINK_KV
 
 // ====== 兼容性工具函数 ======
 
@@ -26,7 +20,7 @@ async function sha256(text) {
 // Base32 字符集
 const BASE32_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
 
-// Base32 解码（兼容版）
+// Base32 解码
 function base32Decode(base32) {
   let bits = '';
   const result = [];
@@ -45,7 +39,7 @@ function base32Decode(base32) {
   return new Uint8Array(result);
 }
 
-// 将数字写入 8 字节 buffer（兼容无 BigInt 环境）
+// 将数字写入 8 字节 buffer
 function writeUInt64BE(buffer, offset, value) {
   const high = Math.floor(value / 0x100000000);
   const low = value >>> 0;
@@ -54,15 +48,13 @@ function writeUInt64BE(buffer, offset, value) {
   view.setUint32(offset + 4, low, false);
 }
 
-// HOTP 计算（使用 HMAC-SHA-1）
+// HOTP 计算
 async function hotp(key, counter, digits) {
   digits = digits || 6;
   
-  // 构建 8 字节计数器
   const counterBuffer = new ArrayBuffer(8);
   writeUInt64BE(counterBuffer, 0, counter);
   
-  // 导入密钥
   const cryptoKey = await crypto.subtle.importKey(
     'raw',
     key,
@@ -71,18 +63,15 @@ async function hotp(key, counter, digits) {
     ['sign']
   );
   
-  // 签名
   const signature = await crypto.subtle.sign('HMAC', cryptoKey, counterBuffer);
   const hash = new Uint8Array(signature);
   
-  // 动态截断
   const offset = hash[hash.length - 1] & 0x0f;
   const code = ((hash[offset] & 0x7f) << 24 |
                 (hash[offset + 1] & 0xff) << 16 |
                 (hash[offset + 2] & 0xff) << 8 |
                 (hash[offset + 3] & 0xff)) >>> 0;
   
-  // 取模
   const mod = Math.pow(10, digits);
   return (code % mod).toString().padStart(digits, '0');
 }
@@ -121,7 +110,7 @@ function base64UrlDecode(str) {
 }
 
 // JWT 签名
-async function signJWT(payload) {
+async function signJWT(payload, secret) {
   const header = base64UrlEncode(JSON.stringify({ alg: 'HS256', typ: 'JWT' }));
   const body = base64UrlEncode(JSON.stringify(payload));
   const data = header + '.' + body;
@@ -129,7 +118,7 @@ async function signJWT(payload) {
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey(
     'raw',
-    encoder.encode(JWT_SECRET),
+    encoder.encode(secret),
     { name: 'HMAC', hash: 'SHA-256' },
     false,
     ['sign']
@@ -147,32 +136,28 @@ async function signJWT(payload) {
 }
 
 // JWT 验证
-async function verifyJWT(token) {
+async function verifyJWT(token, secret) {
   try {
     const parts = token.split('.');
     if (parts.length !== 3) return null;
     
-    const header = parts[0];
-    const body = parts[1];
-    const signature = parts[2];
-    const data = header + '.' + body;
+    const data = parts[0] + '.' + parts[1];
     
     const encoder = new TextEncoder();
     const key = await crypto.subtle.importKey(
       'raw',
-      encoder.encode(JWT_SECRET),
+      encoder.encode(secret),
       { name: 'HMAC', hash: 'SHA-256' },
       false,
       ['verify']
     );
     
-    // 解码签名
     let padding = '';
-    const padLen = 4 - (signature.length % 4);
+    const padLen = 4 - (parts[2].length % 4);
     if (padLen !== 4) {
       padding = new Array(padLen + 1).join('=');
     }
-    const sigBase64 = signature.replace(/-/g, '+').replace(/_/g, '/') + padding;
+    const sigBase64 = parts[2].replace(/-/g, '+').replace(/_/g, '/') + padding;
     const sigBinary = atob(sigBase64);
     const sigBytes = new Uint8Array(sigBinary.length);
     for (let i = 0; i < sigBinary.length; i++) {
@@ -182,7 +167,7 @@ async function verifyJWT(token) {
     const valid = await crypto.subtle.verify('HMAC', key, sigBytes, encoder.encode(data));
     if (!valid) return null;
     
-    return JSON.parse(base64UrlDecode(body));
+    return JSON.parse(base64UrlDecode(parts[1]));
   } catch (e) {
     console.error('JWT verify error:', e);
     return null;
@@ -221,84 +206,6 @@ function htmlResponse(html, status) {
   });
 }
 
-// ====== KV 操作 ======
-
-async function getLink(shortCode) {
-  try {
-    const data = await KV.get('link:' + shortCode);
-    return data ? JSON.parse(data) : null;
-  } catch (e) {
-    return null;
-  }
-}
-
-async function setLink(shortCode, data) {
-  await KV.put('link:' + shortCode, JSON.stringify(data));
-}
-
-async function deleteLink(shortCode) {
-  await KV.delete('link:' + shortCode);
-}
-
-async function incrementClicks(shortCode) {
-  try {
-    const key = 'clicks:' + shortCode;
-    const current = await KV.get(key);
-    const count = current ? parseInt(current) + 1 : 1;
-    await KV.put(key, count.toString());
-    return count;
-  } catch (e) {
-    return 0;
-  }
-}
-
-async function getAllLinks() {
-  const links = [];
-  try {
-    const indexData = await KV.get('link_index');
-    const index = indexData ? JSON.parse(indexData) : [];
-    for (let i = 0; i < index.length; i++) {
-      const link = await getLink(index[i]);
-      if (link) {
-        link.shortCode = index[i];
-        links.push(link);
-      }
-    }
-  } catch (e) {
-    console.error('getAllLinks error:', e);
-  }
-  return links;
-}
-
-async function addToIndex(shortCode) {
-  try {
-    const indexData = await KV.get('link_index');
-    const index = indexData ? JSON.parse(indexData) : [];
-    if (index.indexOf(shortCode) === -1) {
-      index.push(shortCode);
-      await KV.put('link_index', JSON.stringify(index));
-    }
-  } catch (e) {
-    console.error('addToIndex error:', e);
-  }
-}
-
-async function removeFromIndex(shortCode) {
-  try {
-    const indexData = await KV.get('link_index');
-    const index = indexData ? JSON.parse(indexData) : [];
-    const filtered = [];
-    for (let i = 0; i < index.length; i++) {
-      if (index[i] !== shortCode) {
-        filtered.push(index[i]);
-      }
-    }
-    await KV.put('link_index', JSON.stringify(filtered));
-  } catch (e) {
-    console.error('removeFromIndex error:', e);
-  }
-}
-
 // ====== 密码保护页面 ======
 function passwordPage(shortCode) {
   return '<!DOCTYPE html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>密码保护</title>' +
@@ -310,203 +217,6 @@ function passwordPage(shortCode) {
     '<form method="get" action="/' + shortCode + '"><input type="password" name="pwd" placeholder="请输入访问密码" required autofocus><button type="submit">进入链接</button></form></div></body></html>';
 }
 
-// ====== API 路由 ======
-
-async function handleAPI(request, path, method) {
-  const url = new URL(request.url);
-
-  // 创建短链
-  if (path === '/api/create' && method === 'POST') {
-    try {
-      const body = await request.json();
-      const targetUrl = body.url;
-      const customCode = body.customCode;
-      const expireDays = body.expireDays;
-      const password = body.password;
-      
-      if (!targetUrl || !/^https?:\/\/.+/.test(targetUrl)) {
-        return jsonResponse({ error: '请输入有效的 URL' }, 400);
-      }
-
-      let shortCode = customCode;
-      if (shortCode) {
-        if (!/^[a-zA-Z0-9_-]{3,32}$/.test(shortCode)) {
-          return jsonResponse({ error: '短码只能包含字母、数字、下划线和连字符，长度3-32位' }, 400);
-        }
-        const existing = await getLink(shortCode);
-        if (existing) {
-          return jsonResponse({ error: '该短码已被使用' }, 409);
-        }
-      } else {
-        do {
-          shortCode = generateShortCode();
-        } while (await getLink(shortCode));
-      }
-
-      const linkData = {
-        url: targetUrl,
-        createdAt: Date.now(),
-        active: true,
-      };
-
-      if (expireDays && expireDays > 0) {
-        linkData.expireAt = Date.now() + expireDays * 24 * 60 * 60 * 1000;
-      }
-      if (password) {
-        linkData.password = password;
-      }
-
-      await setLink(shortCode, linkData);
-      await addToIndex(shortCode);
-
-      const shortUrl = 'https://' + url.host + '/' + shortCode;
-      return jsonResponse({
-        success: true,
-        shortCode: shortCode,
-        shortUrl: shortUrl,
-        targetUrl: targetUrl,
-        expireAt: linkData.expireAt || null,
-        hasPassword: !!password,
-      });
-    } catch (err) {
-      console.error('Create error:', err);
-      return jsonResponse({ error: '创建失败: ' + err.message }, 500);
-    }
-  }
-
-  // 管理员登录
-  if (path === '/api/login' && method === 'POST') {
-    try {
-      const body = await request.json();
-      const username = body.username;
-      const password = body.password;
-      const totpCode = body.totpCode;
-
-      if (!ADMIN_USERNAME || !ADMIN_PASSWORD_HASH || !ADMIN_TOTP_SECRET) {
-        return jsonResponse({ error: '服务器配置不完整' }, 500);
-      }
-
-      const passwordHash = await sha256(password);
-      if (username !== ADMIN_USERNAME || passwordHash !== ADMIN_PASSWORD_HASH) {
-        return jsonResponse({ error: '账号或密码错误' }, 401);
-      }
-
-      const totpValid = await verifyTOTP(ADMIN_TOTP_SECRET, totpCode);
-      if (!totpValid) {
-        return jsonResponse({ error: 'TOTP 验证码错误' }, 401);
-      }
-
-      const token = await signJWT({
-        sub: username,
-        role: 'admin',
-        iat: Math.floor(Date.now() / 1000),
-        exp: Math.floor(Date.now() / 1000) + 86400,
-      });
-
-      return jsonResponse({ success: true, token: token });
-    } catch (err) {
-      console.error('Login error:', err);
-      return jsonResponse({ error: '登录失败: ' + err.message }, 500);
-    }
-  }
-
-  // 验证 Token
-  if (path === '/api/verify' && method === 'GET') {
-    const auth = request.headers.get('Authorization');
-    if (!auth || auth.indexOf('Bearer ') !== 0) {
-      return jsonResponse({ valid: false }, 401);
-    }
-    const token = auth.substring(7);
-    const payload = await verifyJWT(token);
-    return jsonResponse({ valid: !!payload, user: payload });
-  }
-
-  // 以下需要管理员权限
-  const auth = request.headers.get('Authorization');
-  if (!auth || auth.indexOf('Bearer ') !== 0) {
-    return jsonResponse({ error: '未授权' }, 401);
-  }
-  const token = auth.substring(7);
-  const payload = await verifyJWT(token);
-  if (!payload || payload.role !== 'admin') {
-    return jsonResponse({ error: '权限不足' }, 403);
-  }
-
-  // 获取所有链接
-  if (path === '/api/links' && method === 'GET') {
-    const links = await getAllLinks();
-    for (let i = 0; i < links.length; i++) {
-      const clicks = await KV.get('clicks:' + links[i].shortCode);
-      links[i].clicks = clicks ? parseInt(clicks) : 0;
-    }
-    return jsonResponse({ success: true, links: links });
-  }
-
-  // 获取单条链接
-  if (path.indexOf('/api/links/') === 0 && method === 'GET') {
-    const shortCode = path.split('/')[3];
-    const link = await getLink(shortCode);
-    if (!link) return jsonResponse({ error: '短链不存在' }, 404);
-    const clicks = await KV.get('clicks:' + shortCode);
-    return jsonResponse({
-      success: true,
-      link: Object.assign({}, link, { shortCode: shortCode, clicks: clicks ? parseInt(clicks) : 0 })
-    });
-  }
-
-  // 更新链接
-  if (path.indexOf('/api/links/') === 0 && method === 'PUT') {
-    const shortCode = path.split('/')[3];
-    const link = await getLink(shortCode);
-    if (!link) return jsonResponse({ error: '短链不存在' }, 404);
-    
-    const body = await request.json();
-    if (body.url) link.url = body.url;
-    if (body.active !== undefined) link.active = body.active;
-    if (body.password !== undefined) link.password = body.password || undefined;
-    if (body.expireDays !== undefined) {
-      if (body.expireDays > 0) {
-        link.expireAt = Date.now() + body.expireDays * 24 * 60 * 60 * 1000;
-      } else {
-        delete link.expireAt;
-      }
-    }
-    
-    await setLink(shortCode, link);
-    return jsonResponse({ success: true });
-  }
-
-  // 删除链接
-  if (path.indexOf('/api/links/') === 0 && method === 'DELETE') {
-    const shortCode = path.split('/')[3];
-    await deleteLink(shortCode);
-    await removeFromIndex(shortCode);
-    await KV.delete('clicks:' + shortCode);
-    return jsonResponse({ success: true });
-  }
-
-  // 统计数据
-  if (path === '/api/stats' && method === 'GET') {
-    const links = await getAllLinks();
-    let totalClicks = 0;
-    const stats = [];
-    for (let i = 0; i < links.length; i++) {
-      const clicks = await KV.get('clicks:' + links[i].shortCode);
-      const count = clicks ? parseInt(clicks) : 0;
-      totalClicks += count;
-      stats.push({ shortCode: links[i].shortCode, url: links[i].url, clicks: count });
-    }
-    return jsonResponse({
-      success: true,
-      totalLinks: links.length,
-      totalClicks: totalClicks,
-      stats: stats,
-    });
-  }
-
-  return jsonResponse({ error: '接口不存在' }, 404);
-}
-
 // ====== 主入口 ======
 
 export async function onRequest(context) {
@@ -514,6 +224,302 @@ export async function onRequest(context) {
   const url = new URL(request.url);
   const path = url.pathname;
   const method = request.method;
+
+  // 从 context.env 获取环境变量和 KV（EdgeOne Pages 标准方式）
+  const env = context.env || {};
+  
+  // KV 存储 - 变量名必须与控制台绑定的 Variable Name 一致
+  const KV = env.SHORTLINK_KV;
+  
+  // 环境变量
+  const ADMIN_USERNAME = env.ADMIN_USERNAME || '';
+  const ADMIN_PASSWORD_HASH = env.ADMIN_PASSWORD_HASH || '';
+  const ADMIN_TOTP_SECRET = env.ADMIN_TOTP_SECRET || '';
+  const JWT_SECRET = env.JWT_SECRET || '';
+
+  // 检查 KV 是否绑定
+  if (!KV) {
+    console.error('KV not bound. Please bind a KV namespace with Variable Name: SHORTLINK_KV');
+    return jsonResponse({ 
+      error: 'KV storage not configured', 
+      message: 'Please bind a KV namespace with Variable Name: SHORTLINK_KV in the console' 
+    }, 500);
+  }
+
+  // ====== KV 操作函数（闭包内使用 KV）======
+  
+  async function getLink(shortCode) {
+    try {
+      const data = await KV.get('link:' + shortCode);
+      return data ? JSON.parse(data) : null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  async function setLink(shortCode, data) {
+    await KV.put('link:' + shortCode, JSON.stringify(data));
+  }
+
+  async function deleteLink(shortCode) {
+    await KV.delete('link:' + shortCode);
+  }
+
+  async function incrementClicks(shortCode) {
+    try {
+      const key = 'clicks:' + shortCode;
+      const current = await KV.get(key);
+      const count = current ? parseInt(current) + 1 : 1;
+      await KV.put(key, count.toString());
+      return count;
+    } catch (e) {
+      return 0;
+    }
+  }
+
+  async function getAllLinks() {
+    const links = [];
+    try {
+      const indexData = await KV.get('link_index');
+      const index = indexData ? JSON.parse(indexData) : [];
+      for (let i = 0; i < index.length; i++) {
+        const link = await getLink(index[i]);
+        if (link) {
+          link.shortCode = index[i];
+          links.push(link);
+        }
+      }
+    } catch (e) {
+      console.error('getAllLinks error:', e);
+    }
+    return links;
+  }
+
+  async function addToIndex(shortCode) {
+    try {
+      const indexData = await KV.get('link_index');
+      const index = indexData ? JSON.parse(indexData) : [];
+      if (index.indexOf(shortCode) === -1) {
+        index.push(shortCode);
+        await KV.put('link_index', JSON.stringify(index));
+      }
+    } catch (e) {
+      console.error('addToIndex error:', e);
+    }
+  }
+
+  async function removeFromIndex(shortCode) {
+    try {
+      const indexData = await KV.get('link_index');
+      const index = indexData ? JSON.parse(indexData) : [];
+      const filtered = [];
+      for (let i = 0; i < index.length; i++) {
+        if (index[i] !== shortCode) {
+          filtered.push(index[i]);
+        }
+      }
+      await KV.put('link_index', JSON.stringify(filtered));
+    } catch (e) {
+      console.error('removeFromIndex error:', e);
+    }
+  }
+
+  // ====== API 路由 ======
+
+  async function handleAPI(request, path, method) {
+    // 创建短链（公开接口）
+    if (path === '/api/create' && method === 'POST') {
+      try {
+        const body = await request.json();
+        const targetUrl = body.url;
+        const customCode = body.customCode;
+        const expireDays = body.expireDays;
+        const password = body.password;
+        
+        if (!targetUrl || !/^https?:\/\/.+/.test(targetUrl)) {
+          return jsonResponse({ error: '请输入有效的 URL' }, 400);
+        }
+
+        let shortCode = customCode;
+        if (shortCode) {
+          if (!/^[a-zA-Z0-9_-]{3,32}$/.test(shortCode)) {
+            return jsonResponse({ error: '短码只能包含字母、数字、下划线和连字符，长度3-32位' }, 400);
+          }
+          const existing = await getLink(shortCode);
+          if (existing) {
+            return jsonResponse({ error: '该短码已被使用' }, 409);
+          }
+        } else {
+          do {
+            shortCode = generateShortCode();
+          } while (await getLink(shortCode));
+        }
+
+        const linkData = {
+          url: targetUrl,
+          createdAt: Date.now(),
+          active: true,
+        };
+
+        if (expireDays && expireDays > 0) {
+          linkData.expireAt = Date.now() + expireDays * 24 * 60 * 60 * 1000;
+        }
+        if (password) {
+          linkData.password = password;
+        }
+
+        await setLink(shortCode, linkData);
+        await addToIndex(shortCode);
+
+        const shortUrl = 'https://' + url.host + '/' + shortCode;
+        return jsonResponse({
+          success: true,
+          shortCode: shortCode,
+          shortUrl: shortUrl,
+          targetUrl: targetUrl,
+          expireAt: linkData.expireAt || null,
+          hasPassword: !!password,
+        });
+      } catch (err) {
+        console.error('Create error:', err);
+        return jsonResponse({ error: '创建失败: ' + err.message }, 500);
+      }
+    }
+
+    // 管理员登录
+    if (path === '/api/login' && method === 'POST') {
+      try {
+        const body = await request.json();
+        const username = body.username;
+        const password = body.password;
+        const totpCode = body.totpCode;
+
+        if (!ADMIN_USERNAME || !ADMIN_PASSWORD_HASH || !ADMIN_TOTP_SECRET) {
+          return jsonResponse({ error: '服务器配置不完整' }, 500);
+        }
+
+        const passwordHash = await sha256(password);
+        if (username !== ADMIN_USERNAME || passwordHash !== ADMIN_PASSWORD_HASH) {
+          return jsonResponse({ error: '账号或密码错误' }, 401);
+        }
+
+        const totpValid = await verifyTOTP(ADMIN_TOTP_SECRET, totpCode);
+        if (!totpValid) {
+          return jsonResponse({ error: 'TOTP 验证码错误' }, 401);
+        }
+
+        const token = await signJWT({
+          sub: username,
+          role: 'admin',
+          iat: Math.floor(Date.now() / 1000),
+          exp: Math.floor(Date.now() / 1000) + 86400,
+        }, JWT_SECRET);
+
+        return jsonResponse({ success: true, token: token });
+      } catch (err) {
+        console.error('Login error:', err);
+        return jsonResponse({ error: '登录失败: ' + err.message }, 500);
+      }
+    }
+
+    // 验证 Token
+    if (path === '/api/verify' && method === 'GET') {
+      const auth = request.headers.get('Authorization');
+      if (!auth || auth.indexOf('Bearer ') !== 0) {
+        return jsonResponse({ valid: false }, 401);
+      }
+      const token = auth.substring(7);
+      const payload = await verifyJWT(token, JWT_SECRET);
+      return jsonResponse({ valid: !!payload, user: payload });
+    }
+
+    // 以下需要管理员权限
+    const auth = request.headers.get('Authorization');
+    if (!auth || auth.indexOf('Bearer ') !== 0) {
+      return jsonResponse({ error: '未授权' }, 401);
+    }
+    const token = auth.substring(7);
+    const payload = await verifyJWT(token, JWT_SECRET);
+    if (!payload || payload.role !== 'admin') {
+      return jsonResponse({ error: '权限不足' }, 403);
+    }
+
+    // 获取所有链接
+    if (path === '/api/links' && method === 'GET') {
+      const links = await getAllLinks();
+      for (let i = 0; i < links.length; i++) {
+        const clicks = await KV.get('clicks:' + links[i].shortCode);
+        links[i].clicks = clicks ? parseInt(clicks) : 0;
+      }
+      return jsonResponse({ success: true, links: links });
+    }
+
+    // 获取单条链接
+    if (path.indexOf('/api/links/') === 0 && method === 'GET') {
+      const shortCode = path.split('/')[3];
+      const link = await getLink(shortCode);
+      if (!link) return jsonResponse({ error: '短链不存在' }, 404);
+      const clicks = await KV.get('clicks:' + shortCode);
+      return jsonResponse({
+        success: true,
+        link: Object.assign({}, link, { shortCode: shortCode, clicks: clicks ? parseInt(clicks) : 0 })
+      });
+    }
+
+    // 更新链接
+    if (path.indexOf('/api/links/') === 0 && method === 'PUT') {
+      const shortCode = path.split('/')[3];
+      const link = await getLink(shortCode);
+      if (!link) return jsonResponse({ error: '短链不存在' }, 404);
+      
+      const body = await request.json();
+      if (body.url) link.url = body.url;
+      if (body.active !== undefined) link.active = body.active;
+      if (body.password !== undefined) link.password = body.password || undefined;
+      if (body.expireDays !== undefined) {
+        if (body.expireDays > 0) {
+          link.expireAt = Date.now() + body.expireDays * 24 * 60 * 60 * 1000;
+        } else {
+          delete link.expireAt;
+        }
+      }
+      
+      await setLink(shortCode, link);
+      return jsonResponse({ success: true });
+    }
+
+    // 删除链接
+    if (path.indexOf('/api/links/') === 0 && method === 'DELETE') {
+      const shortCode = path.split('/')[3];
+      await deleteLink(shortCode);
+      await removeFromIndex(shortCode);
+      await KV.delete('clicks:' + shortCode);
+      return jsonResponse({ success: true });
+    }
+
+    // 统计数据
+    if (path === '/api/stats' && method === 'GET') {
+      const links = await getAllLinks();
+      let totalClicks = 0;
+      const stats = [];
+      for (let i = 0; i < links.length; i++) {
+        const clicks = await KV.get('clicks:' + links[i].shortCode);
+        const count = clicks ? parseInt(clicks) : 0;
+        totalClicks += count;
+        stats.push({ shortCode: links[i].shortCode, url: links[i].url, clicks: count });
+      }
+      return jsonResponse({
+        success: true,
+        totalLinks: links.length,
+        totalClicks: totalClicks,
+        stats: stats,
+      });
+    }
+
+    return jsonResponse({ error: '接口不存在' }, 404);
+  }
+
+  // ====== 请求处理 ======
 
   // OPTIONS 预检
   if (method === 'OPTIONS') {
