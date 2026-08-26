@@ -1,0 +1,20 @@
+{
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "function": "[[default]]"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/$1"
+    }
+  ],
+  "headers": [
+    {
+      "source": "/assets/(.*)",
+      "headers": {
+        "Cache-Control": "public, max-age=86400"
+      }
+    }
+  ]
+}
