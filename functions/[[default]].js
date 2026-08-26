@@ -1,7 +1,6 @@
 // ============================================
 // EdgeOne Pages 短链接服务
-// 注意：EdgeOne Pages 的 context 没有 next() 方法
-// 静态文件由平台自动托管，函数只处理动态路由
+// 配合 edgeone.json 路由配置使用
 // ============================================
 
 // KV 直接作为全局变量使用（控制台绑定的 Variable Name = shortlink_kv）
@@ -500,43 +499,39 @@ export async function onRequest(context) {
       return await handleAPI(request, path, method);
     }
 
-    // 短链跳转 - 匹配非静态资源路径
-    // 规则：/xxx 格式，且不是已知静态文件路径
-    if (path !== '/' && path.indexOf('/api/') !== 0) {
-      const shortCode = path.substring(1);
+    // 短链跳转 - 由 edgeone.json 路由配置优先匹配
+    // 这里处理所有非 API 路径（包括短链）
+    const shortCode = path.substring(1);
+    
+    if (shortCode && /^[a-zA-Z0-9_-]{3,32}$/.test(shortCode)) {
+      const link = await getLink(shortCode);
       
-      // 短码格式验证
-      if (shortCode && /^[a-zA-Z0-9_-]+$/.test(shortCode)) {
-        const link = await getLink(shortCode);
-        
-        if (link && link.active !== false) {
-          // 检查过期
-          if (link.expireAt && Date.now() > link.expireAt) {
-            return Response.redirect('/404.html', 302);
-          }
-          // 密码保护
-          if (link.password && !url.searchParams.get('pwd')) {
-            return htmlResponse(passwordPage(shortCode));
-          }
-          if (link.password && url.searchParams.get('pwd') !== link.password) {
-            return htmlResponse('<!DOCTYPE html><html><head><meta charset="utf-8"><title>密码错误</title>' +
-              '<style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f5f5f5}' +
-              '.box{background:#fff;padding:40px;border-radius:12px;text-align:center}h2{color:#dc3545}a{color:#007bff}</style></head>' +
-              '<body><div class="box"><h2>❌ 密码错误</h2><p><a href="/' + shortCode + '">重新输入</a> | <a href="/">返回首页</a></p></div></body></html>');
-          }
-          // 记录点击并跳转
-          await incrementClicks(shortCode);
-          return Response.redirect(link.url, 302);
+      if (link && link.active !== false) {
+        // 检查过期
+        if (link.expireAt && Date.now() > link.expireAt) {
+          return Response.redirect('/404.html', 302);
         }
-        
-        // 短链不存在，跳转到 404
-        return Response.redirect('/404.html', 302);
+        // 密码保护
+        if (link.password && !url.searchParams.get('pwd')) {
+          return htmlResponse(passwordPage(shortCode));
+        }
+        if (link.password && url.searchParams.get('pwd') !== link.password) {
+          return htmlResponse('<!DOCTYPE html><html><head><meta charset="utf-8"><title>密码错误</title>' +
+            '<style>body{font-family:sans-serif;display:flex;justify-content:center;align-items:center;height:100vh;margin:0;background:#f5f5f5}' +
+            '.box{background:#fff;padding:40px;border-radius:12px;text-align:center}h2{color:#dc3545}a{color:#007bff}</style></head>' +
+            '<body><div class="box"><h2>❌ 密码错误</h2><p><a href="/' + shortCode + '">重新输入</a> | <a href="/">返回首页</a></p></div></body></html>');
+        }
+        // 记录点击并跳转
+        await incrementClicks(shortCode);
+        return Response.redirect(link.url, 302);
       }
+      
+      // 短链不存在，跳转到 404
+      return Response.redirect('/404.html', 302);
     }
 
-    // 其他路径（/admin, /login, /, /assets/*, /404.html 等）
-    // EdgeOne Pages 会自动查找 public 目录下的对应静态文件
-    // 不需要调用 context.next()，直接返回 404 让平台处理
+    // 其他路径（/admin, /login, /, /assets/* 等）
+    // 返回 404，让 edgeone.json 路由配置处理静态文件
     return new Response('Not Found', { status: 404 });
 
   } catch (err) {
