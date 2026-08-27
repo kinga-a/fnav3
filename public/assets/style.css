@@ -30,12 +30,10 @@ body {
 .container.admin { max-width: 1200px; }
 .container.center { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
 
-/* Header */
 header { text-align: center; margin-bottom: 40px; }
 header h1 { font-size: 2rem; margin-bottom: 8px; }
 header p { color: var(--text-light); }
 
-/* Card */
 .card {
   background: var(--card-bg);
   border-radius: 16px;
@@ -44,7 +42,6 @@ header p { color: var(--text-light); }
   margin-bottom: 24px;
 }
 
-/* Input */
 .input-group { margin-bottom: 16px; }
 .input-group label {
   display: block;
@@ -73,7 +70,6 @@ header p { color: var(--text-light); }
   font-size: 0.8rem;
 }
 
-/* Options */
 .options {
   background: #f8f9fa;
   border-radius: 12px;
@@ -99,7 +95,6 @@ header p { color: var(--text-light); }
   border-radius: 8px;
 }
 
-/* Buttons */
 .btn-primary, .btn-secondary, .btn-small {
   padding: 12px 24px;
   border: none;
@@ -141,7 +136,6 @@ header p { color: var(--text-light); }
 }
 .btn-copy:hover, .btn-qr:hover { background: var(--primary); color: white; }
 
-/* Result */
 .result { margin-top: 24px; }
 .result.hidden { display: none; }
 .result-box {
@@ -166,7 +160,6 @@ header p { color: var(--text-light); }
 .qr-code.hidden { display: none; }
 .qr-code img { border-radius: 8px; }
 
-/* Features */
 .features {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -181,7 +174,6 @@ header p { color: var(--text-light); }
 .feature h3 { font-size: 1.1rem; margin-bottom: 8px; }
 .feature p { color: var(--text-light); font-size: 0.9rem; }
 
-/* Footer */
 footer { text-align: center; margin-top: 40px; }
 .admin-link {
   color: var(--text-light);
@@ -190,7 +182,6 @@ footer { text-align: center; margin-top: 40px; }
 }
 .admin-link:hover { color: var(--primary); }
 
-/* Login */
 .login-card h2 { text-align: center; margin-bottom: 8px; }
 .subtitle {
   text-align: center;
@@ -206,7 +197,6 @@ footer { text-align: center; margin-top: 40px; }
 }
 .error.hidden { display: none; }
 
-/* Admin */
 .admin-header {
   display: flex;
   justify-content: space-between;
@@ -216,7 +206,6 @@ footer { text-align: center; margin-top: 40px; }
 .admin-header h1 { font-size: 1.5rem; }
 .header-actions { display: flex; align-items: center; gap: 12px; }
 
-/* Tabs */
 .tabs {
   display: flex;
   gap: 8px;
@@ -243,7 +232,6 @@ footer { text-align: center; margin-top: 40px; }
 .tab-content { display: none; }
 .tab-content.active { display: block; }
 
-/* Toolbar */
 .toolbar {
   display: flex;
   justify-content: space-between;
@@ -263,7 +251,6 @@ footer { text-align: center; margin-top: 40px; }
   font-size: 0.85rem;
 }
 
-/* Table */
 .table-wrapper {
   overflow-x: auto;
   background: var(--card-bg);
@@ -294,7 +281,6 @@ footer { text-align: center; margin-top: 40px; }
   white-space: nowrap;
 }
 
-/* Badges */
 .badge {
   display: inline-block;
   padding: 2px 8px;
@@ -306,7 +292,6 @@ footer { text-align: center; margin-top: 40px; }
 .badge.inactive { background: #f8d7da; color: #721c24; }
 .badge.expired { background: #fff3cd; color: #856404; }
 
-/* Stats */
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
@@ -330,7 +315,6 @@ footer { text-align: center; margin-top: 40px; }
   margin-top: 8px;
 }
 
-/* Chart */
 .chart-container {
   background: var(--card-bg);
   border-radius: 16px;
@@ -371,7 +355,6 @@ footer { text-align: center; margin-top: 40px; }
   font-weight: 500;
 }
 
-/* Modal */
 .modal {
   position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
@@ -398,7 +381,6 @@ footer { text-align: center; margin-top: 40px; }
 }
 .modal-actions button { flex: 1; }
 
-/* Error page */
 .error-page { text-align: center; }
 .error-code {
   font-size: 6rem;
@@ -410,7 +392,6 @@ footer { text-align: center; margin-top: 40px; }
 .error-page h2 { margin: 16px 0 8px; }
 .error-page p { color: var(--text-light); margin-bottom: 24px; }
 
-/* Responsive */
 @media (max-width: 768px) {
   .container { padding: 20px 16px; }
   .option-row { flex-direction: column; align-items: stretch; }
