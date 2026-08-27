@@ -21,13 +21,12 @@
       <button class="tab-btn" onclick="switchTab('stats')">📈 数据统计</button>
     </nav>
 
-    <!-- 链接管理 -->
     <div id="linksTab" class="tab-content active">
       <div class="toolbar">
         <input type="text" id="searchInput" placeholder="搜索短码或URL..." oninput="filterLinks()">
         <span id="linkCount" class="count-badge">0 条链接</span>
       </div>
-      
+
       <div class="table-wrapper">
         <table class="data-table">
           <thead>
@@ -45,7 +44,6 @@
       </div>
     </div>
 
-    <!-- 数据统计 -->
     <div id="statsTab" class="tab-content">
       <div class="stats-grid">
         <div class="stat-card">
@@ -57,13 +55,10 @@
           <div class="stat-label">总点击量</div>
         </div>
       </div>
-      <div class="chart-container" id="statsChart">
-        <!-- 简易条形图 -->
-      </div>
+      <div class="chart-container" id="statsChart"></div>
     </div>
   </div>
 
-  <!-- 编辑弹窗 -->
   <div id="editModal" class="modal hidden">
     <div class="modal-content">
       <h3>编辑短链</h3>
@@ -93,7 +88,6 @@
 
     let allLinks = [];
 
-    // 验证 Token
     async function checkAuth() {
       const res = await fetch('/api/verify', {
         headers: { 'Authorization': 'Bearer ' + token }
@@ -103,7 +97,7 @@
         logout();
         return;
       }
-      document.getElementById('userInfo').textContent = `👤 ${data.user.sub}`;
+      document.getElementById('userInfo').textContent = '👤 ' + data.user.sub;
     }
 
     async function loadLinks() {
@@ -120,7 +114,7 @@
     function renderLinks(links) {
       const tbody = document.getElementById('linksTable');
       const domain = window.location.host;
-      
+
       tbody.innerHTML = links.map(link => {
         const date = new Date(link.createdAt).toLocaleString('zh-CN');
         const status = link.active !== false ? 
@@ -129,24 +123,22 @@
         const expired = link.expireAt && Date.now() > link.expireAt;
         const expireBadge = expired ? '<span class="badge expired">已过期</span>' : '';
         const pwdBadge = link.password ? '🔒' : '';
-        
-        return `<tr>
-          <td><a href="https://${domain}/${link.shortCode}" target="_blank">/${link.shortCode}</a> ${pwdBadge}</td>
-          <td class="url-cell" title="${link.url}">${link.url}</td>
-          <td>${date}</td>
-          <td>${link.clicks || 0}</td>
-          <td>${status} ${expireBadge}</td>
-          <td>
-            <button onclick="toggleLink('${link.shortCode}', ${link.active !== false})" class="btn-small">
-              ${link.active !== false ? '禁用' : '启用'}
-            </button>
-            <button onclick="editLink('${link.shortCode}')" class="btn-small">编辑</button>
-            <button onclick="deleteLink('${link.shortCode}')" class="btn-small danger">删除</button>
-          </td>
-        </tr>`;
+
+        return '<tr>' +
+          '<td><a href="https://' + domain + '/s/' + link.shortCode + '" target="_blank">/s/' + link.shortCode + '</a> ' + pwdBadge + '</td>' +
+          '<td class="url-cell" title="' + link.url + '">' + link.url + '</td>' +
+          '<td>' + date + '</td>' +
+          '<td>' + (link.clicks || 0) + '</td>' +
+          '<td>' + status + ' ' + expireBadge + '</td>' +
+          '<td>' +
+            '<button onclick="toggleLink(\'' + link.shortCode + '\', ' + (link.active !== false) + ')" class="btn-small">' + (link.active !== false ? '禁用' : '启用') + '</button>' +
+            '<button onclick="editLink(\'' + link.shortCode + '\')" class="btn-small">编辑</button>' +
+            '<button onclick="deleteLink(\'' + link.shortCode + '\')" class="btn-small danger">删除</button>' +
+          '</td>' +
+        '</tr>';
       }).join('');
-      
-      document.getElementById('linkCount').textContent = `${links.length} 条链接`;
+
+      document.getElementById('linkCount').textContent = links.length + ' 条链接';
     }
 
     function filterLinks() {
@@ -159,7 +151,7 @@
     }
 
     async function toggleLink(code, currentActive) {
-      await fetch(`/api/links/${code}`, {
+      await fetch('/api/links/' + code, {
         method: 'PUT',
         headers: { 
           'Authorization': 'Bearer ' + token,
@@ -186,8 +178,8 @@
       const url = document.getElementById('editUrl').value;
       const password = document.getElementById('editPassword').value;
       const expireDays = parseInt(document.getElementById('editExpire').value) || 0;
-      
-      await fetch(`/api/links/${code}`, {
+
+      await fetch('/api/links/' + code, {
         method: 'PUT',
         headers: { 
           'Authorization': 'Bearer ' + token,
@@ -204,8 +196,8 @@
     }
 
     async function deleteLink(code) {
-      if (!confirm(`确定删除短链 /${code} 吗？此操作不可恢复。`)) return;
-      await fetch(`/api/links/${code}`, {
+      if (!confirm('确定删除短链 /s/' + code + ' 吗？此操作不可恢复。')) return;
+      await fetch('/api/links/' + code, {
         method: 'DELETE',
         headers: { 'Authorization': 'Bearer ' + token }
       });
@@ -220,19 +212,16 @@
       if (data.success) {
         document.getElementById('totalLinks').textContent = data.totalLinks;
         document.getElementById('totalClicks').textContent = data.totalClicks;
-        
-        // 渲染条形图
+
         const chart = document.getElementById('statsChart');
         const maxClicks = Math.max(...data.stats.map(s => s.clicks), 1);
-        chart.innerHTML = data.stats.slice(0, 20).map(s => `
-          <div class="bar-row">
-            <span class="bar-label" title="${s.url}">/${s.shortCode}</span>
-            <div class="bar-wrap">
-              <div class="bar" style="width: ${(s.clicks / maxClicks * 100)}%"></div>
-            </div>
-            <span class="bar-value">${s.clicks}</span>
-          </div>
-        `).join('');
+        chart.innerHTML = data.stats.slice(0, 20).map(s => 
+          '<div class="bar-row">' +
+            '<span class="bar-label" title="' + s.url + '">/s/' + s.shortCode + '</span>' +
+            '<div class="bar-wrap"><div class="bar" style="width: ' + (s.clicks / maxClicks * 100) + '%"></div></div>' +
+            '<span class="bar-value">' + s.clicks + '</span>' +
+          '</div>'
+        ).join('');
       }
     }
 
@@ -249,7 +238,6 @@
       window.location.href = '/login.html';
     }
 
-    // 初始化
     checkAuth();
     loadLinks();
   </script>
