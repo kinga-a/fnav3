@@ -1,8 +1,0 @@
-{
-  "name": "shortlink-service",
-  "version": "1.0.0",
-  "description": "EdgeOne Pages 短链接服务",
-  "scripts": {
-    "dev": "edgeone pages dev"
-  }
-}
