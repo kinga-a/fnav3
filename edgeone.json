@@ -1,18 +1,4 @@
 {
-  "routes": [
-    {
-      "src": "/api/(.*)",
-      "function": "api/[[default]]"
-    },
-    {
-      "src": "/s/(.*)",
-      "function": "s/[[default]]"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/$1"
-    }
-  ],
   "headers": [
     {
       "source": "/assets/(.*)",
