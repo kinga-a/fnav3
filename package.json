@@ -1,0 +1,1 @@
+  {    name: edgeone-kv-totp-app,    version: 1.0.0,    private: true,    scripts: {      dev: npx edgeone dev,      deploy: npx edgeone pages deploy    },    dependencies: {      hono: ^4.6.0    }  }  
